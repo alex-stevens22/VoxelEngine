@@ -29,13 +29,10 @@ For low-end CPUs, if no workers are available, it runs a small portion of jobs i
 Telemetry System
 Tracks performance metrics for:
 
-Render and Simulation frame times
-
-Job queue depth and average wait time
-
-Job execution duration
-
-Worker thread count
+* Render and Simulation frame times
+* Job queue depth and average wait time
+* Job execution duration
+* Worker thread count
 
 These are used by the autoscaler and displayed in the console, for example:
 RT 1.52 ms | ST 0.00 ms | Q=0 | wait≈0.00 ms | workers=10
