@@ -3,6 +3,7 @@ VoxelEngine is a prototype for a multi-threaded, Java-based voxel world engine i
 Right now, the project is a simulation framework, not yet a visual 3D renderer, but it lays all the groundwork for one.
 
 **PROJECT OVERVIEW**
+
 VoxelEngine is a dynamically scaling voxel world simulation that demonstrates a multi-threaded job system, real-time autoscaling of worker threads, and a decoupled render/simulation loop written in Java 21.
 
 In simple terms, it simulates a Minecraft-like engine that runs mock world-generation tasks in parallel to prove out the threading model. The system automatically adjusts how many CPU threads it uses based on system performance and workload (autoscaling). It includes telemetry that tracks how fast the render and simulation loops run, and how backed-up the job queue is.
