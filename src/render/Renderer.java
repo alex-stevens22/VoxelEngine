@@ -4,4 +4,6 @@ public interface Renderer {
     void drainGpuUploadQueue();
     void cullAndRenderFrame();  // first call may perform lazy init
     void shutdown();
+    
+    default boolean shouldClose() { return false; }
 }

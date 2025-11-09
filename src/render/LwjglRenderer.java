@@ -111,18 +111,23 @@ public class LwjglRenderer implements Renderer {
         input.keyShift = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
         input.keyEsc   = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
 
-        // Mouse look: when RMB held, capture cursor and stream deltas
-        boolean rmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-        glfwSetInputMode(window, GLFW_CURSOR, rmb ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        // Always disable cursor while the window is focused; press ESC to request close.
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            glfwSetWindowShouldClose(window, true);
+        }
 
-        // Accumulate mouse delta (since last frame)
-        double[] cx=new double[1], cy=new double[1];
+        // Accumulate mouse delta since last frame (hidden cursor still moves virtually)
+        double[] cx = new double[1], cy = new double[1];
         glfwGetCursorPos(window, cx, cy);
-        // Remember last across frames:
         if (!Double.isNaN(lastX)) {
-            input.addMouseDelta(cx[0]-lastX, cy[0]-lastY);
+            double dx = cx[0] - lastX;
+            double dy = cy[0] - lastY;
+            // Sensitivity: increase this if it feels sluggish (0.2–0.4 is typical)
+            double sens = 0.25;
+            input.addMouseDelta(dx * sens, dy * sens);
         }
         lastX = cx[0]; lastY = cy[0];
+
 
         // Clicks (edge-triggered)
         if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)  input.signalLeftClick();
@@ -216,6 +221,11 @@ public class LwjglRenderer implements Renderer {
         glfwTerminate();
         init = false;
     }
+    
+    @Override
+    public boolean shouldClose() {
+        return init && glfwWindowShouldClose(window);
+    }
 
     private void initWindowAndContext() {
         if (init) return;
@@ -232,6 +242,11 @@ public class LwjglRenderer implements Renderer {
         glfwMakeContextCurrent(window);
         glfwSwapInterval(1); // vsync
         GL.createCapabilities();
+        
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        }
 
         shader = new Shader(VS_SRC, FS_SRC);
         init = true;

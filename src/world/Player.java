@@ -19,7 +19,7 @@ public class Player {
 
     /** Update orientation from mouse deltas (degrees). */
     public void addLook(float dx, float dy) {
-        float sens = 0.1f;
+        float sens = 1.0f;
         yaw += dx * sens;
         pitch -= dy * sens;
         if (pitch > 89.9f) pitch = 89.9f;

@@ -22,15 +22,17 @@ public class RenderThread implements Runnable {
         while (running) {
             long start = System.nanoTime();
             renderer.pollInput();
+            if (renderer.shouldClose()) { running = false; break; }
+
             renderer.drainGpuUploadQueue();
-            renderer.cullAndRenderFrame();   // first call will init LWJGL/GL context
+            renderer.cullAndRenderFrame();
 
             double ms = (System.nanoTime() - start) / 1_000_000.0;
             tm.sampleRender(ms);
 
             if (targetNs > 0) {
                 long sleep = targetNs - (System.nanoTime() - start);
-                if (sleep > 0) LockSupport.parkNanos(sleep);
+                if (sleep > 0) java.util.concurrent.locks.LockSupport.parkNanos(sleep);
             } else {
                 Thread.onSpinWait();
             }

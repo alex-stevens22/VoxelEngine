@@ -38,14 +38,12 @@ public class VoxelEngine {
         // Seed some chunk work so you can see geometry
         world.requestInitialChunks(0, 0, 2);
 
-        // Run ~30s for demo, then shutdown
-        Thread.sleep(30_000);
+        renderThread.join();
+        
         System.out.println("Shutting down...");
-        rt.stop();
         sim.stop();
         jobs.shutdown();
-        dbg.shutdownNow();
-        renderThread.join();
+        simThread.join();
         simThread.join();
     }
 }
