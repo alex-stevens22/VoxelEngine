@@ -34,9 +34,68 @@ public class LwjglRenderer implements Renderer {
     private final List<GLMesh> meshes = new ArrayList<>();
     private Shader shader;
     private final Matrix4f vp = new Matrix4f();
+    private int hiVao = 0, hiVbo = 0;
 
     public LwjglRenderer(World world, Telemetry tm, EngineConfig cfg, InputState input) {
     	this.world = world; this.tm = tm; this.cfg = cfg; this.input = input;
+    }
+    
+    private void ensureHighlightBuffers() {
+        if (hiVao != 0) return;
+        hiVao = org.lwjgl.opengl.GL30.glGenVertexArrays();
+        org.lwjgl.opengl.GL30.glBindVertexArray(hiVao);
+        hiVbo = org.lwjgl.opengl.GL15.glGenBuffers();
+        org.lwjgl.opengl.GL15.glBindBuffer(org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER, hiVbo);
+        // 24 verts * (3 pos + 3 color) * 4 bytes = 576 bytes, but we’ll allow more
+        org.lwjgl.opengl.GL15.glBufferData(org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER, 4096, org.lwjgl.opengl.GL15.GL_DYNAMIC_DRAW);
+
+        int stride = 6 * Float.BYTES; // xyz rgb
+        org.lwjgl.opengl.GL20.glEnableVertexAttribArray(0);
+        org.lwjgl.opengl.GL20.glVertexAttribPointer(0, 3, org.lwjgl.opengl.GL11.GL_FLOAT, false, stride, 0L);
+        org.lwjgl.opengl.GL20.glEnableVertexAttribArray(1);
+        org.lwjgl.opengl.GL20.glVertexAttribPointer(1, 3, org.lwjgl.opengl.GL11.GL_FLOAT, false, stride, 3L * Float.BYTES);
+
+        org.lwjgl.opengl.GL30.glBindVertexArray(0);
+    }
+
+    /** Draws a yellow wireframe box around the given block (world coords). */
+    private void drawBlockOutline(int bx, int by, int bz) {
+        ensureHighlightBuffers();
+
+        // Build 12 edges (24 vertices). Offset by half-voxel to sit on the block boundary.
+        final float x = bx, y = by, z = bz;
+        final float x0 = x,     y0 = y,     z0 = z;
+        final float x1 = x + 1, y1 = y + 1, z1 = z + 1;
+        final float r=1f,g=0.9f,b=0f; // yellow
+
+        float[] v = {
+            // bottom rectangle
+            x0,y0,z0, r,g,b,   x1,y0,z0, r,g,b,
+            x1,y0,z0, r,g,b,   x1,y0,z1, r,g,b,
+            x1,y0,z1, r,g,b,   x0,y0,z1, r,g,b,
+            x0,y0,z1, r,g,b,   x0,y0,z0, r,g,b,
+
+            // top rectangle
+            x0,y1,z0, r,g,b,   x1,y1,z0, r,g,b,
+            x1,y1,z0, r,g,b,   x1,y1,z1, r,g,b,
+            x1,y1,z1, r,g,b,   x0,y1,z1, r,g,b,
+            x0,y1,z1, r,g,b,   x0,y1,z0, r,g,b,
+
+            // vertical edges
+            x0,y0,z0, r,g,b,   x0,y1,z0, r,g,b,
+            x1,y0,z0, r,g,b,   x1,y1,z0, r,g,b,
+            x1,y0,z1, r,g,b,   x1,y1,z1, r,g,b,
+            x0,y0,z1, r,g,b,   x0,y1,z1, r,g,b,
+        };
+
+        org.lwjgl.opengl.GL30.glBindVertexArray(hiVao);
+        org.lwjgl.opengl.GL15.glBindBuffer(org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER, hiVbo);
+        org.lwjgl.opengl.GL15.glBufferSubData(org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER, 0, v);
+
+        // Thick-ish lines so it’s visible
+        org.lwjgl.opengl.GL11.glLineWidth(2.0f);
+        org.lwjgl.opengl.GL11.glDrawArrays(org.lwjgl.opengl.GL11.GL_LINES, 0, v.length / 6);
+        org.lwjgl.opengl.GL30.glBindVertexArray(0);
     }
 
     @Override public void pollInput() {
@@ -127,6 +186,16 @@ public class LwjglRenderer implements Renderer {
         float[] vpArr = new float[16];
         vp.get(vpArr);
         glUniformMatrix4fv(shader.uVP, false, vpArr);
+        
+        // After setting the uVP uniform and before drawing meshes:
+        for (GLMesh m : meshes) m.draw();
+
+        // Highlight targeted block (raycast from world; returns null if nothing hit)
+        World.RayHit hit = world.raycast(world.player, 8.0f);
+        if (hit != null) {
+            // Depth test ON so the outline occludes properly behind blocks
+            drawBlockOutline(hit.x, hit.y, hit.z);
+        }
 
         // ------ Draw all uploaded meshes ------
         for (GLMesh m : meshes) {
