@@ -8,15 +8,17 @@ import jobs.JobSystem;
 import render.LwjglRenderer;
 import render.Renderer;
 import world.World;
+import engine.InputState;
 
 /** Entry point: wires config, telemetry, jobs, world, renderer, and threads. */
 public class VoxelEngine {
     public static void main(String[] args) throws Exception {
         EngineConfig cfg = new EngineConfig();
+        InputState input = new InputState();
         Telemetry tm = new Telemetry();
         JobSystem jobs = new JobSystem(cfg, tm);
-        World world = new World(jobs);
-        Renderer renderer = new LwjglRenderer(world, tm, cfg);
+        World world = new World(jobs, input);
+        Renderer renderer = new LwjglRenderer(world, tm, cfg, input);
 
         SimulationThread sim = new SimulationThread(world, jobs, tm, cfg);
         RenderThread rt = new RenderThread(renderer, tm, cfg);
