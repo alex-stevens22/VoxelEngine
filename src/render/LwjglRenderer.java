@@ -17,6 +17,14 @@ import world.World;
 import world.World.MeshBlob;
 import engine.InputState;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import world.World.GpuUpload;
+import world.World.ChunkPos;
+import world.World.MeshBlob;
+
+
 /**
  * Real renderer: opens a window, uploads MeshBlob objects to GL, draws them.
  * WASD + Space/Ctrl to move, hold Right Mouse Button to capture mouse for look.
@@ -31,7 +39,7 @@ public class LwjglRenderer implements Renderer {
     private long window = 0;
     private boolean init = false;
 
-    private final List<GLMesh> meshes = new ArrayList<>();
+    private final Map<ChunkPos, GLMesh> meshesByChunk = new HashMap<>();
     private Shader shader;
     private final Matrix4f vp = new Matrix4f();
     private int hiVao = 0, hiVbo = 0;
@@ -129,23 +137,40 @@ public class LwjglRenderer implements Renderer {
         lastX = cx[0]; lastY = cy[0];
 
 
-        // Clicks (edge-triggered)
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)  input.signalLeftClick();
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) input.signalRightClick();
+        boolean lNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)  == GLFW_PRESS;
+        boolean rNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+
+        // rising edge only → one “click” per press
+        if (lNow && !prevLmb) input.signalLeftClick();
+        if (rNow && !prevRmb) input.signalRightClick();
+
+        prevLmb = lNow;
+        prevRmb = rNow;
     }
     
-    private double lastX=Double.NaN, lastY=Double.NaN;
+    private boolean prevLmb = false, prevRmb = false;
+    private double lastX = Double.NaN, lastY = Double.NaN; // (you likely already have these)
 
 
-    @Override public void drainGpuUploadQueue() {
+
+    @Override
+    public void drainGpuUploadQueue() {
         if (!init) return;
         int uploads = 0;
-        MeshBlob blob;
-        while (uploads < 4 && (blob = world.gpuUploads.poll()) != null) {
-            meshes.add(new GLMesh(blob.vertices, blob.indices));
+        GpuUpload up;
+        while (uploads < 8 && (up = world.gpuUploads.poll()) != null) {
+            // build GL mesh
+            MeshBlob blob = up.mesh;
+            GLMesh newMesh = new GLMesh(blob.vertices, blob.indices);
+
+            // replace old one if present
+            GLMesh old = meshesByChunk.put(up.pos, newMesh);
+            if (old != null) old.destroy();
+
             uploads++;
         }
     }
+
 
     @Override public void cullAndRenderFrame() {
         // Lazy-init the window + GL context the first time this is called.
@@ -193,8 +218,9 @@ public class LwjglRenderer implements Renderer {
         glUniformMatrix4fv(shader.uVP, false, vpArr);
         
         // After setting the uVP uniform and before drawing meshes:
-        for (GLMesh m : meshes) m.draw();
-
+        for (GLMesh m : meshesByChunk.values()) {
+            m.draw();
+        }
         // Highlight targeted block (raycast from world; returns null if nothing hit)
         World.RayHit hit = world.raycast(world.player, 8.0f);
         if (hit != null) {
@@ -202,25 +228,23 @@ public class LwjglRenderer implements Renderer {
             drawBlockOutline(hit.x, hit.y, hit.z);
         }
 
-        // ------ Draw all uploaded meshes ------
-        for (GLMesh m : meshes) {
-            m.draw();
-        }
-
         // Present
         glfwSwapBuffers(window);
     }
 
-    @Override public void shutdown() {
+    @Override
+    public void shutdown() {
         if (!init) return;
-        for (GLMesh m : meshes) m.destroy();
-        meshes.clear();
+        // destroy all chunk meshes
+        for (GLMesh m : meshesByChunk.values()) m.destroy();
+        meshesByChunk.clear();
         shader.destroy();
         glfwMakeContextCurrent(0);
         glfwDestroyWindow(window);
         glfwTerminate();
         init = false;
     }
+
     
     @Override
     public boolean shouldClose() {

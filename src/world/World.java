@@ -23,7 +23,14 @@ public class World {
     public static final byte AIR=0, GRASS=1, DIRT=2, STONE=3;
 
     // Ready-to-upload meshes consumed by renderer
-    public final ConcurrentLinkedQueue<MeshBlob> gpuUploads = new ConcurrentLinkedQueue<>();
+    public final ConcurrentLinkedQueue<GpuUpload> gpuUploads = new ConcurrentLinkedQueue<>();
+    
+    public static final class GpuUpload {
+        public final ChunkPos pos;
+        public final MeshBlob mesh;
+        public GpuUpload(ChunkPos pos, MeshBlob mesh) { this.pos = pos; this.mesh = mesh; }
+    }
+
 
     private final ConcurrentHashMap<ChunkPos, Chunk> chunks = new ConcurrentHashMap<>();
     private final JobSystem jobs;
@@ -44,26 +51,32 @@ public class World {
     }
 
     public void tick(double dt) {
+        // movement
         boolean fwd = input.keyW, back = input.keyS, left = input.keyA, right = input.keyD;
-        boolean up = false, down = false; // classic-style: no fly by default
-        boolean sprint = input.keyShift;
-        boolean jump = input.keySpace;
-
+        boolean up = false, down = false;
+        boolean sprint = input.keyShift, jump = input.keySpace;
         player.tick(this, fwd, back, left, right, up, down, sprint, jump, (float)dt);
 
-        // Block edit: left-click remove, right-click place GRASS
-        if (input.consumeLeftClick() || input.consumeRightClick()) {
-            RayHit hit = raycast(player, 6.0f); // 6-block reach
+        // clicks: consume ONCE
+        boolean leftClick  = input.consumeLeftClick();
+        boolean rightClick = input.consumeRightClick();
+
+        if (leftClick || rightClick) {
+            // bump reach; see section 2 below
+            RayHit hit = raycast(player, 10.0f);
             if (hit != null) {
-                if (input.consumeLeftClick()) setBlock(hit.x, hit.y, hit.z, AIR);
-                else if (input.consumeRightClick()) {
-                    // place on adjacent cell in the face normal direction
+                if (leftClick) {
+                    setBlock(hit.x, hit.y, hit.z, AIR);
+                    // System.out.println("Removed @ " + hit.x+","+hit.y+","+hit.z);
+                } else { // rightClick
                     int px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
                     setBlock(px, py, pz, GRASS);
+                    // System.out.println("Placed @ " + px+","+py+","+pz);
                 }
             }
         }
     }
+
 
     public void processChunkPipelines() { /* meshing is done via jobs as edits happen */ }
 
@@ -221,7 +234,7 @@ public class World {
                     emitIfAir(w, baseX+x, y, baseZ+z,  0,0,-1, va,ia, colorFor(id)); // -Z
                 }
 
-            w.gpuUploads.add(new MeshBlob(va.toArray(), ia.toArray()));
+            w.gpuUploads.add(new GpuUpload(pos, new MeshBlob(va.toArray(), ia.toArray())));
         }
 
         private float[] colorFor(byte id){

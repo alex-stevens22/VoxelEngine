@@ -39,11 +39,11 @@ public class VoxelEngine {
         world.requestInitialChunks(0, 0, 2);
 
         renderThread.join();
+        dbg.shutdownNow();
         
         System.out.println("Shutting down...");
         sim.stop();
         jobs.shutdown();
-        simThread.join();
         simThread.join();
     }
 }

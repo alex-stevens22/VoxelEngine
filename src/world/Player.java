@@ -4,7 +4,7 @@ import org.joml.Vector3f;
 
 /** Simple FPS-style player with AABB collision. */
 public class Player {
-    public final Vector3f pos = new Vector3f(0, 20, 0);   // start above ground
+    public final Vector3f pos = new Vector3f(0, 14, 0);   // start above ground
     public final Vector3f vel = new Vector3f();
     public float yaw = -90f, pitch = 0f;
 
