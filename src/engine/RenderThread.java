@@ -29,6 +29,7 @@ public class RenderThread implements Runnable {
 
             double ms = (System.nanoTime() - start) / 1_000_000.0;
             tm.sampleRender(ms);
+            tm.markFrame();
 
             if (targetNs > 0) {
                 long sleep = targetNs - (System.nanoTime() - start);

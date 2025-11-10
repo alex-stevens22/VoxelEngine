@@ -30,10 +30,28 @@ public class VoxelEngine {
 
         // Console debug once per second
         ScheduledExecutorService dbg = Executors.newSingleThreadScheduledExecutor();
-        dbg.scheduleAtFixedRate(() -> System.out.printf(
-            "RT %.2f ms | ST %.2f ms | Q=%d | workers=%d%n",
-            tm.renderMs(), tm.simMs(), tm.getQueuedJobs(), jobs.currentWorkers()
-        ), 1, 1, TimeUnit.SECONDS);
+        final long[] prevFrames = { tm.getFrameCount() };
+        final long[] prevTimeNs = { System.nanoTime() };
+
+        dbg.scheduleAtFixedRate(() -> {
+            long now = System.nanoTime();
+            long framesNow = tm.getFrameCount();
+
+            long df = framesNow - prevFrames[0];
+            double dtSec = (now - prevTimeNs[0]) / 1_000_000_000.0;
+            double fps = (dtSec > 0) ? (df / dtSec) : 0.0;
+
+            prevFrames[0] = framesNow;
+            prevTimeNs[0] = now;
+
+            double rtime = tm.renderMs();
+            double stime = tm.simMs();
+
+            System.out.printf(
+                "FPS %.0f | RT %.2f ms | ST %.2f ms | Q=%d | workers=%d%n",
+                fps, rtime, stime, tm.getQueuedJobs(), jobs.currentWorkers()
+            );
+        }, 1, 1, java.util.concurrent.TimeUnit.SECONDS);
 
         // Seed some chunk work so you can see geometry
         world.requestInitialChunks(0, 0, 2);

@@ -1,6 +1,7 @@
 package engine;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Simple exponentially-weighted telemetry for autoscaling + debug prints. */
@@ -10,12 +11,15 @@ public class Telemetry {
     private final AtomicReference<Double> renderMs = new AtomicReference<>(0.0);
     private final AtomicReference<Double> simMs = new AtomicReference<>(0.0);
     private final AtomicInteger queuedJobs = new AtomicInteger(0);
+    private final AtomicLong frameCount = new AtomicLong(0);
 
     public void setQueuedJobs(int q) { queuedJobs.set(q); }
     public int getQueuedJobs() { return queuedJobs.get(); }
 
     public void sampleRender(double ms) { ema(renderMs, ms); }
     public void sampleSim(double ms) { ema(simMs, ms); }
+    public void markFrame() { frameCount.incrementAndGet(); }
+    public long getFrameCount() { return frameCount.get(); }
 
     public double renderMs() { return renderMs.get(); }
     public double simMs() { return simMs.get(); }
