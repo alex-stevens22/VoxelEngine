@@ -46,8 +46,8 @@ public class World {
     // ---- per-tick hooks from SimulationThread ----
     public void consumeInputs() {
         // Mouse look
-        double[] d = input.consumeMouseDelta();
-        if (d[0] != 0 || d[1] != 0) player.addLook((float)d[0], (float)d[1]);
+        //double[] d = input.consumeMouseDelta();
+        //if (d[0] != 0 || d[1] != 0) player.addLook((float)d[0], (float)d[1]);
     }
 
     public void tick(double dt) {
@@ -60,6 +60,8 @@ public class World {
         // clicks: consume ONCE
         boolean leftClick  = input.consumeLeftClick();
         boolean rightClick = input.consumeRightClick();
+        
+        player.postSimTick();   // NEW: publish this tick’s position
 
         if (leftClick || rightClick) {
             // bump reach; see section 2 below

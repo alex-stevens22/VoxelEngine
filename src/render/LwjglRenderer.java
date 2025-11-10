@@ -132,6 +132,7 @@ public class LwjglRenderer implements Renderer {
             double dy = cy[0] - lastY;
             // Sensitivity: increase this if it feels sluggish (0.2–0.4 is typical)
             double sens = 0.25;
+            world.player.addLook((float)(dx * sens), (float)(dy * sens));
             input.addMouseDelta(dx * sens, dy * sens);
         }
         lastX = cx[0]; lastY = cy[0];
@@ -199,16 +200,23 @@ public class LwjglRenderer implements Renderer {
         float sp = (float) Math.sin(Math.toRadians(pitch));
         float fx = cy * cp, fy = sp, fz = sy * cp;
 
-        // Eye and target (look-at)
-        org.joml.Vector3f eye    = world.player.pos;
-        org.joml.Vector3f center = new org.joml.Vector3f(eye.x + fx, eye.y + fy, eye.z + fz);
+        // Interpolation factor from Telemetry
+        float alpha = (float) tm.interpAlpha();
 
-        // Projection (70° FOV) and view matrices
+        // Interpolated eye = lerp(prevPos, currPos, alpha)
+        org.joml.Vector3f p0 = world.player.prevPos;
+        org.joml.Vector3f p1 = world.player.currPos;
+        float ex = p0.x + (p1.x - p0.x) * alpha;
+        float ey = p0.y + (p1.y - p0.y) * alpha;
+        float ez = p0.z + (p1.z - p0.z) * alpha;
+
+        org.joml.Vector3f eye    = new org.joml.Vector3f(ex, ey, ez);
+        org.joml.Vector3f center = new org.joml.Vector3f(ex + fx, ey + fy, ez + fz);
+
         org.joml.Matrix4f proj = new org.joml.Matrix4f()
-                .perspective((float) Math.toRadians(70), aspect, 0.05f, 500f);
+            .perspective((float)Math.toRadians(70), aspect, 0.05f, 500f);
         org.joml.Matrix4f view = new org.joml.Matrix4f()
-                .lookAt(eye, center, new org.joml.Vector3f(0, 1, 0));
-
+            .lookAt(eye, center, new org.joml.Vector3f(0,1,0));
         // VP = proj * view
         proj.mul(view, vp);
 

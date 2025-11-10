@@ -7,6 +7,21 @@ public class Player {
     public final Vector3f pos = new Vector3f(0, 14, 0);   // start above ground
     public final Vector3f vel = new Vector3f();
     public float yaw = -90f, pitch = 0f;
+    
+    public final Vector3f prevPos = new Vector3f();
+    public final Vector3f currPos = new Vector3f();
+
+    public Player() {
+        pos.set(0, 14, 0);       // your spawn; or keep your existing constructor init
+        prevPos.set(pos);
+        currPos.set(pos);
+    }
+
+    /** Call once per sim tick after physics/collisions are applied */
+    public void postSimTick() {
+        prevPos.set(currPos);
+        currPos.set(pos);
+    }
 
     // Axis-aligned bounding box half-extents (player "capsule" approximated as a box)
     private static final float HALF_X = 0.3f, HALF_Y = 0.9f, HALF_Z = 0.3f;

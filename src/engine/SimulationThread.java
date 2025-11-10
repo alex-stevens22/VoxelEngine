@@ -35,6 +35,7 @@ public class SimulationThread implements Runnable {
             }
 
             tm.sampleSim((System.nanoTime() - start) / 1_000_000.0);
+            tm.markSimTick();
             next += stepNs;
         }
     }
