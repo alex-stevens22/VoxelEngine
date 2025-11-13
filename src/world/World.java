@@ -31,6 +31,9 @@ public class World {
         public GpuUpload(ChunkPos pos, MeshBlob mesh) { this.pos = pos; this.mesh = mesh; }
     }
 
+    @FunctionalInterface public interface UVProvider { float[] uv(String name); } // returns {u0,v0,u1,v1}
+    private UVProvider uvProvider = name -> new float[]{0,0,1,1};
+    public void setUVProvider(UVProvider p){ this.uvProvider = p; }
 
     private final ConcurrentHashMap<ChunkPos, Chunk> chunks = new ConcurrentHashMap<>();
     private final JobSystem jobs;
@@ -200,7 +203,7 @@ public class World {
 
     // CPU-side geometry package. Vertex layout: xyz rgb (6 floats)
     public static final class MeshBlob {
-        public final float[] vertices;
+        public final float[] vertices; // ...xyz rgb uv...
         public final int[] indices;
         public MeshBlob(float[] v, int[] i){ this.vertices=v; this.indices=i; }
     }
@@ -246,29 +249,43 @@ public class World {
             return new float[]{1,1,1};
         }
 
-        private void emitIfAir(World w, int wx,int wy,int wz, int nx,int ny,int nz, FloatArray va, IntArray ia, float[] col){
-            int ax=wx+nx, ay=wy+ny, az=wz+nz;
-            if (ay<0 || ay>=CHUNK_SIZE_Y || !w.isSolid(ax,ay,az)) {
-                // Make a quad centered on the block face
-                float x=wx+0.5f, y=wy+0.5f, z=wz+0.5f, s=0.5f;
-                // Build 4 vertices for this face
-                int base = va.size()/6;
-                // Compute tangent vectors for face to get the rectangle corners
-                // For axis-aligned faces, choose u,v vectors:
-                float ux,uy,uz, vx,vy,vz;
-                if (nx!=0){ ux=0;uy=1;uz=0;  vx=0;vy=0;vz=1; }      // X face
-                else if (ny!=0){ ux=1;uy=0;uz=0; vx=0;vy=0;vz=1; }  // Y face
-                else { ux=1;uy=0;uz=0; vx=0;vy=1;vz=0; }           // Z face
-                float fx = x + nx*s, fy = y + ny*s, fz = z + nz*s;
-                pushVertex(va, fx - ux*s - vx*s, fy - uy*s - vy*s, fz - uz*s - vz*s, col);
-                pushVertex(va, fx + ux*s - vx*s, fy + uy*s - vy*s, fz + uz*s - vz*s, col);
-                pushVertex(va, fx + ux*s + vx*s, fy + uy*s + vy*s, fz + uz*s + vz*s, col);
-                pushVertex(va, fx - ux*s + vx*s, fy - uy*s + vy*s, fz - uz*s + vz*s, col);
-
-                // Two triangles
-                ia.add(base); ia.add(base+1); ia.add(base+2);
-                ia.add(base); ia.add(base+2); ia.add(base+3);
-            }
+        private void emitIfAir(World w, int wx,int wy,int wz, int nx,int ny,int nz,
+                FloatArray va, IntArray ia, float[] col) {
+			int ax=wx+nx, ay=wy+ny, az=wz+nz;
+			if (ay<0 || ay>=CHUNK_SIZE_Y || !w.isSolid(ax,ay,az)) {
+			 // Pick the face texture name using block + face
+			 Block b = Block.fromId(w.getBlock(wx, wy, wz));
+			 String texName = b.faceTexture(faceOf(nx,ny,nz));
+			 float[] uv = w.uvProvider.uv(texName); // u0,v0,u1,v1
+			
+			 float x=wx+0.5f, y=wy+0.5f, z=wz+0.5f, s=0.5f;
+			 float ux,uy,uz, vx,vy,vz;
+			 if (nx!=0){ ux=0;uy=1;uz=0;  vx=0;vy=0;vz=1; }
+			 else if (ny!=0){ ux=1;uy=0;uz=0; vx=0;vy=0;vz=1; }
+			 else { ux=1;uy=0;uz=0; vx=0;vy=1;vz=0; }
+			 float fx = x + nx*s, fy = y + ny*s, fz = z + nz*s;
+			
+			 // UV corners (keep consistent winding with your indices)
+			 float u0=uv[0], v0=uv[1], u1=uv[2], v1=uv[3];
+			
+			 int base = va.size()/8;
+			 // v0
+			 pushV(va, fx - ux*s - vx*s, fy - uy*s - vy*s, fz - uz*s - vz*s, col, u0, v1);
+			 // v1
+			 pushV(va, fx + ux*s - vx*s, fy + uy*s - vy*s, fz + uz*s - vz*s, col, u1, v1);
+			 // v2
+			 pushV(va, fx + ux*s + vx*s, fy + uy*s + vy*s, fz + uz*s + vz*s, col, u1, v0);
+			 // v3
+			 pushV(va, fx - ux*s + vx*s, fy - uy*s + vy*s, fz - uz*s + vz*s, col, u0, v0);
+			
+			 ia.add(base); ia.add(base+1); ia.add(base+2);
+			 ia.add(base); ia.add(base+2); ia.add(base+3);
+			}
+        }
+        private void pushV(FloatArray va, float x,float y,float z, float[] c, float u, float v){
+            va.add(x); va.add(y); va.add(z);
+            va.add(c[0]); va.add(c[1]); va.add(c[2]);
+            va.add(u); va.add(v);
         }
 
         private void pushVertex(FloatArray va, float x,float y,float z, float[] c){
@@ -289,5 +306,13 @@ public class World {
         void add(int v){ if(size>=a.length) grow(); a[size++]=v; }
         int[] toArray(){ int[] out=new int[size]; System.arraycopy(a,0,out,0,size); return out; }
         private void grow(){ int[] n=new int[a.length*2]; System.arraycopy(a,0,n,0,a.length); a=n; }
+    }
+    private static Block.Face faceOf(int nx,int ny,int nz){
+        if (nx== 1) return Block.Face.PX;
+        if (nx==-1) return Block.Face.NX;
+        if (ny== 1) return Block.Face.PY;
+        if (ny==-1) return Block.Face.NY;
+        if (nz== 1) return Block.Face.PZ;
+        return Block.Face.NZ;
     }
 }

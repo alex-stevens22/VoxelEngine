@@ -43,6 +43,7 @@ public class LwjglRenderer implements Renderer {
     private Shader shader;
     private final Matrix4f vp = new Matrix4f();
     private int hiVao = 0, hiVbo = 0;
+    private TextureAtlas atlas;
 
     public LwjglRenderer(World world, Telemetry tm, EngineConfig cfg, InputState input) {
     	this.world = world; this.tm = tm; this.cfg = cfg; this.input = input;
@@ -225,6 +226,9 @@ public class LwjglRenderer implements Renderer {
         vp.get(vpArr);
         glUniformMatrix4fv(shader.uVP, false, vpArr);
         
+        if (atlas != null) atlas.glTex.bind(0);
+        for (GLMesh m : meshesByChunk.values()) m.draw();
+        
         // After setting the uVP uniform and before drawing meshes:
         for (GLMesh m : meshesByChunk.values()) {
             m.draw();
@@ -247,6 +251,7 @@ public class LwjglRenderer implements Renderer {
         for (GLMesh m : meshesByChunk.values()) m.destroy();
         meshesByChunk.clear();
         shader.destroy();
+        atlas.glTex.destroy();
         glfwMakeContextCurrent(0);
         glfwDestroyWindow(window);
         glfwTerminate();
@@ -261,6 +266,28 @@ public class LwjglRenderer implements Renderer {
 
     private void initWindowAndContext() {
         if (init) return;
+        
+        System.out.println("user.dir = " + System.getProperty("user.dir"));
+        System.out.println("assets on classpath (textures/...): " +
+            (TextureAtlas.class.getClassLoader()
+                .getResourceAsStream("textures/block/grass_top.png") != null));
+
+        try {
+            java.nio.file.Path dir = java.nio.file.Paths.get(
+                System.getProperty("user.dir"), "assets", "textures", "block");
+            System.out.println("FS dir exists: " + java.nio.file.Files.exists(dir));
+            if (java.nio.file.Files.exists(dir)) {
+                System.out.println("FS listing of assets/textures/block:");
+                java.nio.file.Files.list(dir).forEach(p -> System.out.println(" - " + p.getFileName()));
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+        
+        org.lwjgl.glfw.GLFWErrorCallback.createPrint(System.err).set();
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+            System.err.println("[UNCAUGHT] in thread " + t.getName());
+            e.printStackTrace();
+        });
+        
         if (!glfwInit()) throw new IllegalStateException("GLFW init failed");
         glfwDefaultWindowHints();
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
@@ -275,27 +302,73 @@ public class LwjglRenderer implements Renderer {
         glfwSwapInterval(1); // vsync
         GL.createCapabilities();
         
+        System.out.println("Building atlas…");
+        String[] tiles = { "grass_top", "grass_side", "dirt", "stone", "missing" };
+        atlas = new TextureAtlas(tiles);
+
+        // bind sampler to texture unit 0
+        glUseProgram(shader.programId);
+        glUniform1i(glGetUniformLocation(shader.programId, "uTex"), 0);
+
+        // give World a UV provider
+        world.setUVProvider(name -> {
+            TextureAtlas.Region r = atlas.region(name);
+            return new float[]{ r.u0, r.v0, r.u1, r.v1 };
+        });
+        System.out.println("Atlas OK");
+        
+        if (org.lwjgl.opengl.GL.getCapabilities().GL_KHR_debug) {
+            org.lwjgl.opengl.GL43.glEnable(org.lwjgl.opengl.GL43.GL_DEBUG_OUTPUT);
+            org.lwjgl.opengl.GL43.glDebugMessageCallback((src, type, id, sev, len, msg, user) -> {
+                System.err.println("[GL] " + org.lwjgl.opengl.GLDebugMessageCallback.getMessage(len, msg));
+            }, 0L);
+        }
+        
+        System.out.println(
+        	    (new render.TextureAtlas(new String[] {"missing"})) != null ? "FOUND" : "NOT FOUND"
+        	);
+        
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         if (glfwRawMouseMotionSupported()) {
             glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         }
+        
+        // 1) Build atlas with the tiles you will use (order defines packing)
+        String[] atlasTiles = { "grass_top", "grass_side", "dirt", "stone", "missing" };
+        atlas = new TextureAtlas(atlasTiles);
+
+        // 2) Bind sampler
+        glUseProgram(shader.programId);
+        int loc = glGetUniformLocation(shader.programId, "uTex");
+        glUniform1i(loc, 0); // texture unit 0
+
+        // 3) Give the world a UV provider that queries the atlas
+        world.setUVProvider(name -> {
+            TextureAtlas.Region r = atlas.region(name);
+            return new float[]{ r.u0, r.v0, r.u1, r.v1 };
+        });
 
         shader = new Shader(VS_SRC, FS_SRC);
+        atlas.glTex.bind(0);
         init = true;
         System.out.println("[Renderer] Window + GL initialized");
     }
 
     private static final String VS_SRC =
-        "#version 330 core\n" +
-        "layout(location=0) in vec3 inPos;\n" +
-        "layout(location=1) in vec3 inColor;\n" +
-        "uniform mat4 uVP;\n" +
-        "out vec3 vColor;\n" +
-        "void main(){ vColor = inColor; gl_Position = uVP * vec4(inPos,1.0); }\n";
+    		"#version 330 core\n" +
+    		"layout(location=0) in vec3 inPos;\n" +
+    		"layout(location=1) in vec3 inColor;\n" +
+    		"layout(location=2) in vec2 inUV;\n" +
+    		"uniform mat4 uVP;\n" +
+    		"out vec3 vColor;\n" +
+    		"out vec2 vUV;\n" +
+    		"void main(){ vColor=inColor; vUV=inUV; gl_Position = uVP * vec4(inPos,1.0); }\n";
 
     private static final String FS_SRC =
-        "#version 330 core\n" +
-        "in vec3 vColor;\n" +
-        "out vec4 fragColor;\n" +
-        "void main(){ fragColor = vec4(vColor, 1.0); }\n";
+    		"#version 330 core\n" +
+    		"in vec3 vColor;\n" +
+    		"in vec2 vUV;\n" +
+    		"uniform sampler2D uTex;\n" +
+    		"out vec4 fragColor;\n" +
+    		"void main(){ vec4 tex = texture(uTex, vUV); fragColor = tex * vec4(vColor,1.0); }\n";
 }

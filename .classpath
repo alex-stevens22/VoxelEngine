@@ -6,6 +6,7 @@
 		</attributes>
 	</classpathentry>
 	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="src" path="assets"/>
 	<classpathentry kind="lib" path="C:/Users/AS Productions/Desktop/Eclipse Projects/VoxelEngine/lwjgl-release-3.3.6-custom/lwjgl.jar"/>
 	<classpathentry kind="lib" path="C:/Users/AS Productions/Desktop/Eclipse Projects/VoxelEngine/lwjgl-release-3.3.6-custom/lwjgl-glfw.jar"/>
 	<classpathentry kind="lib" path="C:/Users/AS Productions/Desktop/Eclipse Projects/VoxelEngine/lwjgl-release-3.3.6-custom/lwjgl-opengl.jar"/>
@@ -13,5 +14,7 @@
 	<classpathentry kind="lib" path="C:/Users/AS Productions/Desktop/Eclipse Projects/VoxelEngine/lwjgl-release-3.3.6-custom/lwjgl-glfw-natives-windows.jar"/>
 	<classpathentry kind="lib" path="C:/Users/AS Productions/Desktop/Eclipse Projects/VoxelEngine/lwjgl-release-3.3.6-custom/lwjgl-opengl-natives-windows.jar"/>
 	<classpathentry kind="lib" path="C:/Users/AS Productions/Desktop/Eclipse Projects/VoxelEngine/lwjgl-release-3.3.6-custom/lwjgl-natives-windows.jar"/>
+	<classpathentry kind="lib" path="C:/Users/AS Productions/Desktop/Eclipse Projects/VoxelEngine/lwjgl-release-3.3.6-custom/lwjgl-stb.jar"/>
+	<classpathentry kind="lib" path="C:/Users/AS Productions/Desktop/Eclipse Projects/VoxelEngine/lwjgl-release-3.3.6-custom/lwjgl-stb-natives-windows.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
