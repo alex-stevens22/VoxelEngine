@@ -21,7 +21,7 @@ public class VoxelEngine {
         Renderer renderer = new LwjglRenderer(world, tm, cfg, input);
 
         SimulationThread sim = new SimulationThread(world, jobs, tm, cfg);
-        RenderThread rt = new RenderThread(renderer, tm, cfg);
+        RenderThread rt = new RenderThread(renderer, tm);
 
         Thread simThread = new Thread(sim, "SimThread");
         Thread renderThread = new Thread(rt, "RenderThread");

@@ -242,6 +242,15 @@ public class World {
 
             w.gpuUploads.add(new GpuUpload(pos, new MeshBlob(va.toArray(), ia.toArray())));
         }
+        
+        private void pushVertex(FloatArray va, float x,float y,float z, float[] c, float shade) {
+    		va.add(x);
+    		va.add(y);
+    		va.add(z);
+    		va.add(c[0] * shade);
+    		va.add(c[1] * shade);
+    		va.add(c[2] * shade);
+    	}
 
         private float[] colorFor(byte id){
             if (id==GRASS) return new float[]{0.2f,0.8f,0.2f};
@@ -253,64 +262,69 @@ public class World {
         private void emitIfAir(World w, int wx,int wy,int wz,
                 int nx,int ny,int nz,
                 FloatArray va, IntArray ia, float[] col) {
-        	int ax = wx + nx, ay = wy + ny, az = wz + nz;
-        	if (ay < 0 || ay >= CHUNK_SIZE_Y || !w.isSolid(ax, ay, az)) {
-
-				 // simple face-based lighting (with sun straight above)
-				 float shade;
-				 if (ny > 0) {
-				     shade = 1.00f;    // top faces – brightest
-				 } else if (ny < 0) {
-				     shade = 0.40f;    // bottom faces – darkest
-				 } else if (nx != 0) {
-				     shade = 0.70f;    // east/west sides
-				 } else { // nz != 0
-				     shade = 0.85f;    // north/south sides
-				 }
-
-				 // Make a quad centered on the block face
-				 float x = wx + 0.5f, y = wy + 0.5f, z = wz + 0.5f, s = 0.5f;
-				
-				 // Build 4 vertices for this face
-				 int base = va.size() / 6;
-				
-				 // Compute tangent vectors for face to get the rectangle corners
-				 float ux, uy, uz, vx, vy, vz;
-				 if (nx != 0) {                 // X face
-				     ux = 0; uy = 1; uz = 0;
-				     vx = 0; vy = 0; vz = 1;
-				 } else if (ny != 0) {          // Y face
-				     ux = 1; uy = 0; uz = 0;
-				     vx = 0; vy = 0; vz = 1;
-				 } else {                       // Z face
-				     ux = 1; uy = 0; uz = 0;
-				     vx = 0; vy = 1; vz = 0;
-				 }
-				
-				 float fx = x + nx * s, fy = y + ny * s, fz = z + nz * s;
-				
-				 // 4 vertices, with per-face shade applied
-				 pushVertex(va, fx - ux*s - vx*s, fy - uy*s - vy*s, fz - uz*s - vz*s, col, shade);
-				 pushVertex(va, fx + ux*s - vx*s, fy + uy*s - vy*s, fz + uz*s - vz*s, col, shade);
-				 pushVertex(va, fx + ux*s + vx*s, fy + uy*s + vy*s, fz + uz*s + vz*s, col, shade);
-				 pushVertex(va, fx - ux*s + vx*s, fy - uy*s + vy*s, fz - uz*s + vz*s, col, shade);
-
-				 // Two triangles
-				 ia.add(base);   ia.add(base+1); ia.add(base+2);
-				 ia.add(base);   ia.add(base+2); ia.add(base+3);
-        	}
+			int ax = wx + nx, ay = wy + ny, az = wz + nz;
+			if (ay < 0 || ay >= CHUNK_SIZE_Y || !w.isSolid(ax, ay, az)) {
+			
+			 // --- base directional shading (same as before) ---
+			 float shade;
+			 if (ny > 0) {
+			     shade = 1.0f;      // top
+			 } else if (ny < 0) {
+			     shade = 0.4f;      // bottom
+			 } else if (nx != 0) {
+			     shade = 0.7f;      // east/west sides
+			 } else {
+			     shade = 0.85f;     // north/south sides
+			 }
+			
+			 // --- extra shadow if sun is blocked above this face ---
+			 // Sun is straight up, so only top faces (ny > 0) care.
+			 if (ny > 0) {
+			     boolean occluded = false;
+			     for (int yy = wy + 1; yy < CHUNK_SIZE_Y; yy++) {
+			         if (w.isSolid(wx, yy, wz)) {
+			             occluded = true;
+			             break;
+			         }
+			     }
+			     if (occluded) {
+			         // Darken heavily if something is above this column
+			         shade *= 0.3f;  // tweak this number to taste
+			     }
+			 }
+			
+			 // Make a quad centered on the block face
+			 float x = wx + 0.5f, y = wy + 0.5f, z = wz + 0.5f, s = 0.5f;
+			
+			 // Build 4 vertices for this face
+			 int base = va.size() / 6;
+			
+			 // Compute tangent vectors for face to get the rectangle corners
+			 float ux, uy, uz, vx, vy, vz;
+			 if (nx != 0) {                 // X face
+			     ux = 0; uy = 1; uz = 0;
+			     vx = 0; vy = 0; vz = 1;
+			 } else if (ny != 0) {          // Y face
+			     ux = 1; uy = 0; uz = 0;
+			     vx = 0; vy = 0; vz = 1;
+			 } else {                       // Z face
+			     ux = 1; uy = 0; uz = 0;
+			     vx = 0; vy = 1; vz = 0;
+			 }
+			
+			 float fx = x + nx * s, fy = y + ny * s, fz = z + nz * s;
+			
+			 // 4 vertices, with per-face shade applied
+			 pushVertex(va, fx - ux*s - vx*s, fy - uy*s - vy*s, fz - uz*s - vz*s, col, shade);
+		     pushVertex(va, fx + ux*s - vx*s, fy + uy*s - vy*s, fz + uz*s - vz*s, col, shade);
+		     pushVertex(va, fx + ux*s + vx*s, fy + uy*s + vy*s, fz + uz*s + vz*s, col, shade);
+		     pushVertex(va, fx - ux*s + vx*s, fy - uy*s + vy*s, fz - uz*s + vz*s, col, shade);
+			
+			 // Two triangles
+			 ia.add(base);   ia.add(base+1); ia.add(base+2);
+			 ia.add(base);   ia.add(base+2); ia.add(base+3);
+			}
         }
-
-
-        private void pushVertex(FloatArray va, float x,float y,float z,
-        		float[] c, float shade) {
-					va.add(x);
-					va.add(y);
-					va.add(z);
-					va.add(c[0] * shade);
-					va.add(c[1] * shade);
-					va.add(c[2] * shade);
-}
     }
 
     // simple dynamic arrays to avoid boxing/alloc storms in mesher
