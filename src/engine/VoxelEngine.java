@@ -18,10 +18,10 @@ public class VoxelEngine {
         Telemetry tm = new Telemetry();
         JobSystem jobs = new JobSystem(cfg, tm);
         World world = new World(jobs, input);
-        Renderer renderer = new LwjglRenderer(world, tm, cfg);
+        Renderer renderer = new LwjglRenderer(world, tm, cfg, input);
 
         SimulationThread sim = new SimulationThread(world, jobs, tm, cfg);
-        RenderThread rt = new RenderThread(renderer, tm);
+        RenderThread rt = new RenderThread(renderer, tm, cfg);
 
         Thread simThread = new Thread(sim, "SimThread");
         Thread renderThread = new Thread(rt, "RenderThread");
@@ -32,17 +32,6 @@ public class VoxelEngine {
         ScheduledExecutorService dbg = Executors.newSingleThreadScheduledExecutor();
         final long[] prevFrames = { tm.getFrameCount() };
         final long[] prevTimeNs = { System.nanoTime() };
-        
-        //renderer.drainGpuUploadQueue();
-        //renderer.cullAndRenderFrame();
-        //tm.markFrame(); // markFrame updates your FPS counter
-        
-        
-        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
-            System.err.println("[UNCAUGHT] in " + t.getName());
-            e.printStackTrace();
-        });
-
 
         dbg.scheduleAtFixedRate(() -> {
             long now = System.nanoTime();
