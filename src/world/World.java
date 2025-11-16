@@ -21,6 +21,10 @@ public class World {
 
     // simple block id palette
     public static final byte AIR=0, GRASS=1, DIRT=2, STONE=3;
+    
+    // Player physical scale (blocks are 1m^3)
+    public static final float PLAYER_HEIGHT     = 1.8f;  // total height in meters/blocks
+    public static final float PLAYER_EYE_HEIGHT = 1.7f;  // eye position above feet
 
     // Ready-to-upload meshes consumed by renderer
     public final ConcurrentLinkedQueue<GpuUpload> gpuUploads = new ConcurrentLinkedQueue<>();
@@ -151,8 +155,8 @@ public class World {
     // ---- raycast (grid DDA) from player eye ----
     public static final class RayHit { public final int x,y,z, nx,ny,nz; RayHit(int x,int y,int z,int nx,int ny,int nz){ this.x=x; this.y=y; this.z=z; this.nx=nx; this.ny=ny; this.nz=nz; } }
     public RayHit raycast(Player p, float maxDist) {
-        // Eye position slightly above center
-        float ex = p.pos.x, ey = p.pos.y + 0.6f, ez = p.pos.z;
+        // Eye position slightly below player height
+    	float ex = p.pos.x, ey = p.pos.y + PLAYER_EYE_HEIGHT /2f, ez = p.pos.z;
         // Forward direction from yaw/pitch
         float cy=(float)Math.cos(Math.toRadians(p.yaw)), sy=(float)Math.sin(Math.toRadians(p.yaw));
         float cp=(float)Math.cos(Math.toRadians(p.pitch)), sp=(float)Math.sin(Math.toRadians(p.pitch));

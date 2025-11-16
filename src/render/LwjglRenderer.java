@@ -207,7 +207,7 @@ public class LwjglRenderer implements Renderer {
         org.joml.Vector3f p0 = world.player.prevPos;
         org.joml.Vector3f p1 = world.player.currPos;
         float ex = p0.x + (p1.x - p0.x) * alpha;
-        float ey = p0.y + (p1.y - p0.y) * alpha;
+        float ey = p0.y + (p1.y - p0.y) * alpha + World.PLAYER_EYE_HEIGHT / 2f;
         float ez = p0.z + (p1.z - p0.z) * alpha;
 
         org.joml.Vector3f eye    = new org.joml.Vector3f(ex, ey, ez);
