@@ -35,13 +35,10 @@ public class World {
         public GpuUpload(ChunkPos pos, MeshBlob mesh) { this.pos = pos; this.mesh = mesh; }
     }
 
-    @FunctionalInterface public interface UVProvider { float[] uv(String name); } // returns {u0,v0,u1,v1}
-    private UVProvider uvProvider = name -> new float[]{0,0,1,1};
-    public void setUVProvider(UVProvider p){ this.uvProvider = p; }
 
     private final ConcurrentHashMap<ChunkPos, Chunk> chunks = new ConcurrentHashMap<>();
     private final JobSystem jobs;
-    public final InputState input;
+    private final InputState input;
     public final Player player = new Player();
 
     public World(JobSystem jobs, InputState input) {
@@ -207,7 +204,7 @@ public class World {
 
     // CPU-side geometry package. Vertex layout: xyz rgb (6 floats)
     public static final class MeshBlob {
-        public final float[] vertices; // ...xyz rgb uv...
+        public final float[] vertices;
         public final int[] indices;
         public MeshBlob(float[] v, int[] i){ this.vertices=v; this.indices=i; }
     }
@@ -329,13 +326,5 @@ public class World {
         void add(int v){ if(size>=a.length) grow(); a[size++]=v; }
         int[] toArray(){ int[] out=new int[size]; System.arraycopy(a,0,out,0,size); return out; }
         private void grow(){ int[] n=new int[a.length*2]; System.arraycopy(a,0,n,0,a.length); a=n; }
-    }
-    private static Block.Face faceOf(int nx,int ny,int nz){
-        if (nx== 1) return Block.Face.PX;
-        if (nx==-1) return Block.Face.NX;
-        if (ny== 1) return Block.Face.PY;
-        if (ny==-1) return Block.Face.NY;
-        if (nz== 1) return Block.Face.PZ;
-        return Block.Face.NZ;
     }
 }
