@@ -22,13 +22,14 @@ final class GLMesh {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
 
-        int stride = 6 * Float.BYTES; // xyz rgb
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, false, stride, 0L);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 3, GL_FLOAT, false, stride, 3L * Float.BYTES);
+        int stride = 8 * Float.BYTES;
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0,3,GL_FLOAT,false,stride,0L);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1,3,GL_FLOAT,false,stride,3L*Float.BYTES);
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2,2,GL_FLOAT,false,stride,6L*Float.BYTES);
+
 
         glBindVertexArray(0);
+        
     }
 
     void draw() {

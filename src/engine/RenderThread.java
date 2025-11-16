@@ -1,43 +1,50 @@
 package engine;
 
-import java.util.concurrent.locks.LockSupport;
 import render.Renderer;
 
-/** Owns the graphics context thread and calls the renderer each frame. */
-public class RenderThread implements Runnable {
+public final class RenderThread extends Thread {
     private final Renderer renderer;
     private final Telemetry tm;
-    private final EngineConfig cfg;
     private volatile boolean running = true;
 
-    public RenderThread(Renderer r, Telemetry t, EngineConfig c) {
-        this.renderer = r; this.tm = t; this.cfg = c;
+    public RenderThread(Renderer renderer, Telemetry tm) {
+        this.renderer = renderer;
+        this.tm = tm;
+        setName("RenderThread");
     }
 
-    public void stop() { running = false; }
+    public void requestStop() {
+        running = false;
+    }
 
-    @Override public void run() {
-        final long targetNs = (cfg.renderTargetFps > 0) ? 1_000_000_000L / cfg.renderTargetFps : 0L;
+    @Override
+    public void run() {
+        System.out.println("[RenderThread] start");
+        try {
+            System.out.println("[RenderThread] calling renderer.init()");
+            renderer.init();
+            System.out.println("[RenderThread] init OK, entering loop");
 
-        while (running) {
-            long start = System.nanoTime();
-            renderer.pollInput();
-            if (renderer.shouldClose()) { running = false; break; }
+            // Render until either:
+            //  - someone calls requestStop(), OR
+            //  - the window asks to close.
+            while (running) {
+                renderer.pollInput();
 
-            renderer.drainGpuUploadQueue();
-            renderer.cullAndRenderFrame();
+                if (renderer.shouldClose()) {
+                    System.out.println("[RenderThread] window requested close");
+                    break;
+                }
 
-            double ms = (System.nanoTime() - start) / 1_000_000.0;
-            tm.sampleRender(ms);
-            tm.markFrame();
+                renderer.drainGpuUploadQueue();
+                renderer.cullAndRenderFrame();
 
-            if (targetNs > 0) {
-                long sleep = targetNs - (System.nanoTime() - start);
-                if (sleep > 0) java.util.concurrent.locks.LockSupport.parkNanos(sleep);
-            } else {
-                Thread.onSpinWait();
+                tm.markFrame();  // updates FPS
             }
+        } finally {
+            System.out.println("[RenderThread] calling renderer.shutdown()");
+            renderer.shutdown();
+            System.out.println("[RenderThread] shutdown done");
         }
-        renderer.shutdown();
     }
 }
