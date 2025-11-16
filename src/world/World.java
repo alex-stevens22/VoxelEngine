@@ -37,7 +37,7 @@ public class World {
 
     private final ConcurrentHashMap<ChunkPos, Chunk> chunks = new ConcurrentHashMap<>();
     private final JobSystem jobs;
-    private final InputState input;
+    public final InputState input;
     public final Player player = new Player();
 
     public World(JobSystem jobs, InputState input) {
