@@ -179,7 +179,7 @@ public class LwjglRenderer implements Renderer {
 
         // Basic render state
         glEnable(GL_DEPTH_TEST);
-        glClearColor(0.08f, 0.10f, 0.14f, 1f);
+        glClearColor(0.498f, 0.8f, 1.00f, 1.00f); //Sky color
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Use our tiny shader (uVP = view-projection matrix)
