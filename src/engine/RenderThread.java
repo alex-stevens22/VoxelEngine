@@ -25,7 +25,10 @@ public final class RenderThread extends Thread {
             renderer.init();
             System.out.println("[RenderThread] init OK, entering loop");
 
-            while (true) {
+            // Render until either:
+            //  - someone calls requestStop(), OR
+            //  - the window asks to close.
+            while (running) {
                 renderer.pollInput();
 
                 if (renderer.shouldClose()) {
@@ -36,7 +39,7 @@ public final class RenderThread extends Thread {
                 renderer.drainGpuUploadQueue();
                 renderer.cullAndRenderFrame();
 
-                tm.markFrame();
+                tm.markFrame();  // updates FPS
             }
         } finally {
             System.out.println("[RenderThread] calling renderer.shutdown()");

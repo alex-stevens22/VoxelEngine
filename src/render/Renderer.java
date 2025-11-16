@@ -6,5 +6,5 @@ public interface Renderer {
     void cullAndRenderFrame();  /** Build matrices, bind resources, and draw. */
     void shutdown();
     
-    default boolean shouldClose() { return false; }
+    boolean shouldClose();
 }
