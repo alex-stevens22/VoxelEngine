@@ -257,6 +257,13 @@ public final class LwjglRenderer implements Renderer {
 //        }
     	System.out.println("[LwjglRenderer] cullAndRenderFrame");
 
+    @Override public void cullAndRenderFrame() {
+        // Lazy-init the window + GL context the first time this is called.
+        if (!init) initWindowAndContext();
+
+        // Basic render state
+        glEnable(GL_DEPTH_TEST);
+        glClearColor(0.498f, 0.8f, 1.00f, 1.00f); //Sky color
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Framebuffer size → aspect
@@ -277,7 +284,7 @@ public final class LwjglRenderer implements Renderer {
         Vector3f p0 = world.player.prevPos;
         Vector3f p1 = world.player.currPos;
         float ex = p0.x + (p1.x - p0.x) * alpha;
-        float ey = p0.y + (p1.y - p0.y) * alpha;
+        float ey = p0.y + (p1.y - p0.y) * alpha + World.PLAYER_EYE_HEIGHT / 2f;
         float ez = p0.z + (p1.z - p0.z) * alpha;
 
         Vector3f eye    = new Vector3f(ex, ey, ez);

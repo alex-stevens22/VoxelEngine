@@ -21,6 +21,10 @@ public class World {
 
     // simple block id palette
     public static final byte AIR=0, GRASS=1, DIRT=2, STONE=3;
+    
+    // Player physical scale (blocks are 1m^3)
+    public static final float PLAYER_HEIGHT     = 1.8f;  // total height in meters/blocks
+    public static final float PLAYER_EYE_HEIGHT = 1.7f;  // eye position above feet
 
     // Ready-to-upload meshes consumed by renderer
     public final ConcurrentLinkedQueue<GpuUpload> gpuUploads = new ConcurrentLinkedQueue<>();
@@ -154,8 +158,8 @@ public class World {
     // ---- raycast (grid DDA) from player eye ----
     public static final class RayHit { public final int x,y,z, nx,ny,nz; RayHit(int x,int y,int z,int nx,int ny,int nz){ this.x=x; this.y=y; this.z=z; this.nx=nx; this.ny=ny; this.nz=nz; } }
     public RayHit raycast(Player p, float maxDist) {
-        // Eye position slightly above center
-        float ex = p.pos.x, ey = p.pos.y + 0.6f, ez = p.pos.z;
+        // Eye position slightly below player height
+    	float ex = p.pos.x, ey = p.pos.y + PLAYER_EYE_HEIGHT /2f, ez = p.pos.z;
         // Forward direction from yaw/pitch
         float cy=(float)Math.cos(Math.toRadians(p.yaw)), sy=(float)Math.sin(Math.toRadians(p.yaw));
         float cp=(float)Math.cos(Math.toRadians(p.pitch)), sp=(float)Math.sin(Math.toRadians(p.pitch));
@@ -213,7 +217,7 @@ public class World {
         private final World w; private final ChunkPos pos;
         MeshJob(World w, ChunkPos pos){ this.w=w; this.pos=pos; }
         public JobPriority priority(){ return JobPriority.P0_CRITICAL; }
-        public void run(){
+        public void run(){ 
             Chunk c = w.chunks.get(pos);
             if (c == null) return;
 
@@ -249,48 +253,67 @@ public class World {
             return new float[]{1,1,1};
         }
 
-        private void emitIfAir(World w, int wx,int wy,int wz, int nx,int ny,int nz,
+        private void emitIfAir(World w, int wx,int wy,int wz,
+                int nx,int ny,int nz,
                 FloatArray va, IntArray ia, float[] col) {
-			int ax=wx+nx, ay=wy+ny, az=wz+nz;
-			if (ay<0 || ay>=CHUNK_SIZE_Y || !w.isSolid(ax,ay,az)) {
-			 // Pick the face texture name using block + face
-			 Block b = Block.fromId(w.getBlock(wx, wy, wz));
-			 String texName = b.faceTexture(faceOf(nx,ny,nz));
-			 float[] uv = w.uvProvider.uv(texName); // u0,v0,u1,v1
-			
-			 float x=wx+0.5f, y=wy+0.5f, z=wz+0.5f, s=0.5f;
-			 float ux,uy,uz, vx,vy,vz;
-			 if (nx!=0){ ux=0;uy=1;uz=0;  vx=0;vy=0;vz=1; }
-			 else if (ny!=0){ ux=1;uy=0;uz=0; vx=0;vy=0;vz=1; }
-			 else { ux=1;uy=0;uz=0; vx=0;vy=1;vz=0; }
-			 float fx = x + nx*s, fy = y + ny*s, fz = z + nz*s;
-			
-			 // UV corners (keep consistent winding with your indices)
-			 float u0=uv[0], v0=uv[1], u1=uv[2], v1=uv[3];
-			
-			 int base = va.size()/8;
-			 // v0
-			 pushV(va, fx - ux*s - vx*s, fy - uy*s - vy*s, fz - uz*s - vz*s, col, u0, v1);
-			 // v1
-			 pushV(va, fx + ux*s - vx*s, fy + uy*s - vy*s, fz + uz*s - vz*s, col, u1, v1);
-			 // v2
-			 pushV(va, fx + ux*s + vx*s, fy + uy*s + vy*s, fz + uz*s + vz*s, col, u1, v0);
-			 // v3
-			 pushV(va, fx - ux*s + vx*s, fy - uy*s + vy*s, fz - uz*s + vz*s, col, u0, v0);
-			
-			 ia.add(base); ia.add(base+1); ia.add(base+2);
-			 ia.add(base); ia.add(base+2); ia.add(base+3);
-			}
-        }
-        private void pushV(FloatArray va, float x,float y,float z, float[] c, float u, float v){
-            va.add(x); va.add(y); va.add(z);
-            va.add(c[0]); va.add(c[1]); va.add(c[2]);
-            va.add(u); va.add(v);
+        	int ax = wx + nx, ay = wy + ny, az = wz + nz;
+        	if (ay < 0 || ay >= CHUNK_SIZE_Y || !w.isSolid(ax, ay, az)) {
+
+				 // simple face-based lighting (with sun straight above)
+				 float shade;
+				 if (ny > 0) {
+				     shade = 1.00f;    // top faces – brightest
+				 } else if (ny < 0) {
+				     shade = 0.40f;    // bottom faces – darkest
+				 } else if (nx != 0) {
+				     shade = 0.70f;    // east/west sides
+				 } else { // nz != 0
+				     shade = 0.85f;    // north/south sides
+				 }
+
+				 // Make a quad centered on the block face
+				 float x = wx + 0.5f, y = wy + 0.5f, z = wz + 0.5f, s = 0.5f;
+				
+				 // Build 4 vertices for this face
+				 int base = va.size() / 6;
+				
+				 // Compute tangent vectors for face to get the rectangle corners
+				 float ux, uy, uz, vx, vy, vz;
+				 if (nx != 0) {                 // X face
+				     ux = 0; uy = 1; uz = 0;
+				     vx = 0; vy = 0; vz = 1;
+				 } else if (ny != 0) {          // Y face
+				     ux = 1; uy = 0; uz = 0;
+				     vx = 0; vy = 0; vz = 1;
+				 } else {                       // Z face
+				     ux = 1; uy = 0; uz = 0;
+				     vx = 0; vy = 1; vz = 0;
+				 }
+				
+				 float fx = x + nx * s, fy = y + ny * s, fz = z + nz * s;
+				
+				 // 4 vertices, with per-face shade applied
+				 pushVertex(va, fx - ux*s - vx*s, fy - uy*s - vy*s, fz - uz*s - vz*s, col, shade);
+				 pushVertex(va, fx + ux*s - vx*s, fy + uy*s - vy*s, fz + uz*s - vz*s, col, shade);
+				 pushVertex(va, fx + ux*s + vx*s, fy + uy*s + vy*s, fz + uz*s + vz*s, col, shade);
+				 pushVertex(va, fx - ux*s + vx*s, fy - uy*s + vy*s, fz - uz*s + vz*s, col, shade);
+
+				 // Two triangles
+				 ia.add(base);   ia.add(base+1); ia.add(base+2);
+				 ia.add(base);   ia.add(base+2); ia.add(base+3);
+        	}
         }
 
-        private void pushVertex(FloatArray va, float x,float y,float z, float[] c){
-            va.add(x); va.add(y); va.add(z); va.add(c[0]); va.add(c[1]); va.add(c[2]);
-        }
+
+        private void pushVertex(FloatArray va, float x,float y,float z,
+        		float[] c, float shade) {
+					va.add(x);
+					va.add(y);
+					va.add(z);
+					va.add(c[0] * shade);
+					va.add(c[1] * shade);
+					va.add(c[2] * shade);
+}
     }
 
     // simple dynamic arrays to avoid boxing/alloc storms in mesher
