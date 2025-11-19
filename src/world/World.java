@@ -18,6 +18,7 @@ public class World {
     public static final int CHUNK_SIZE_X = 16;
     public static final int CHUNK_SIZE_Y = 128; // tall enough for classic feeling
     public static final int CHUNK_SIZE_Z = 16;
+    public static final int MAX_LIGHT = 15;
 
     // simple block id palette
     public static final byte AIR=0, GRASS=1, DIRT=2, STONE=3;
@@ -98,7 +99,8 @@ public class World {
             Chunk c = new Chunk();
             flatInit(cx, cz, c);     // simple flat terrain
             // queue initial mesh
-            jobs.submit(new MeshJob(this, key));
+            jobs.submit(new LightJob(this, key));
+            // jobs.submit(new MeshJob(this, key));
             return c;
         });
     }
@@ -133,7 +135,7 @@ public class World {
     }
 
     public void setBlock(int wx, int wy, int wz, byte id) {
-        int cx = floorDiv(wx, CHUNK_SIZE_X), cz = floorDiv(wz, CHUNK_SIZE_Z);
+    	int cx = floorDiv(wx, CHUNK_SIZE_X), cz = floorDiv(wz, CHUNK_SIZE_Z);
         int lx = floorMod(wx, CHUNK_SIZE_X), lz = floorMod(wz, CHUNK_SIZE_Z);
         if (wy < 0 || wy >= CHUNK_SIZE_Y) return;
 
@@ -141,12 +143,19 @@ public class World {
         Chunk ch = ensureChunk(cx, cz);
         ch.set(lx, wy, lz, id);
 
-        // re-mesh this chunk and any neighbor touched on border
-        jobs.submit(new MeshJob(this, key));
-        if (lx==0) jobs.submit(new MeshJob(this, new ChunkPos(cx-1,cz)));
-        if (lx==CHUNK_SIZE_X-1) jobs.submit(new MeshJob(this, new ChunkPos(cx+1,cz)));
-        if (lz==0) jobs.submit(new MeshJob(this, new ChunkPos(cx,cz-1)));
-        if (lz==CHUNK_SIZE_Z-1) jobs.submit(new MeshJob(this, new ChunkPos(cx,cz+1)));
+        // 1) recompute lighting in this chunk (and neighbors at borders)
+        jobs.submit(new LightJob(this, key));
+        if (lx==0)                 jobs.submit(new LightJob(this, new ChunkPos(cx-1,cz)));
+        if (lx==CHUNK_SIZE_X-1)    jobs.submit(new LightJob(this, new ChunkPos(cx+1,cz)));
+        if (lz==0)                 jobs.submit(new LightJob(this, new ChunkPos(cx,cz-1)));
+        if (lz==CHUNK_SIZE_Z-1)    jobs.submit(new LightJob(this, new ChunkPos(cx,cz+1)));
+
+        // 2) then rebuild meshes that use those light values
+        // jobs.submit(new MeshJob(this, key));
+        // if (lx==0)                 jobs.submit(new MeshJob(this, new ChunkPos(cx-1,cz)));
+        // if (lx==CHUNK_SIZE_X-1)    jobs.submit(new MeshJob(this, new ChunkPos(cx+1,cz)));
+        // if (lz==0)                 jobs.submit(new MeshJob(this, new ChunkPos(cx,cz-1)));
+        // if (lz==CHUNK_SIZE_Z-1)    jobs.submit(new MeshJob(this, new ChunkPos(cx,cz+1)));
     }
 
     private static int floorDiv(int a, int b) { int q = a / b; int r = a % b; return (r<0)?(q-1):q; }
@@ -190,11 +199,33 @@ public class World {
     // ---- chunk + storage ----
     public static final class Chunk {
         // Flat byte array: x + z*SX + y*SX*SZ
-        private final byte[] vox = new byte[CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z];
-        private static int idx(int x,int y,int z){ return x + z*CHUNK_SIZE_X + y*CHUNK_SIZE_X*CHUNK_SIZE_Z; }
-        public byte get(int x,int y,int z){ return vox[idx(x,y,z)]; }
-        public void set(int x,int y,int z, byte id){ vox[idx(x,y,z)] = id; }
+        private final byte[] vox   = new byte[CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z];
+
+        // Per-block light value (0–15)
+        private final byte[] light = new byte[vox.length];
+
+        private static int idx(int x,int y,int z) {
+            return x + z * CHUNK_SIZE_X + y * CHUNK_SIZE_X * CHUNK_SIZE_Z;
+        }
+
+        public byte get(int x,int y,int z) {
+            return vox[idx(x,y,z)];
+        }
+
+        public void set(int x,int y,int z, byte id) {
+            vox[idx(x,y,z)] = id;
+        }
+
+        public byte getLight(int x,int y,int z) {
+            return light[idx(x,y,z)];
+        }
+
+        public void setLight(int x,int y,int z, byte v) {
+            light[idx(x,y,z)] = v;
+        }
     }
+
+    
     public static final class ChunkPos {
         public final int x,z;
         public ChunkPos(int x,int z){ this.x=x; this.z=z; }
@@ -211,10 +242,21 @@ public class World {
 
     // ---- meshing job (naive face culling) ----
     static final class MeshJob implements Job {
-        private final World w; private final ChunkPos pos;
-        MeshJob(World w, ChunkPos pos){ this.w=w; this.pos=pos; }
-        public JobPriority priority(){ return JobPriority.P0_CRITICAL; }
-        public void run(){ 
+        private final World w;
+        private final ChunkPos pos;
+
+        MeshJob(World w, ChunkPos pos) {
+            this.w = w;
+            this.pos = pos;
+        }
+
+        @Override
+        public JobPriority priority() {
+            return JobPriority.P0_CRITICAL;
+        }
+
+        @Override
+        public void run() {
             Chunk c = w.chunks.get(pos);
             if (c == null) return;
 
@@ -222,110 +264,247 @@ public class World {
             FloatArray va = new FloatArray(32_000);
             IntArray ia = new IntArray(48_000);
 
-            final int SX=CHUNK_SIZE_X, SY=CHUNK_SIZE_Y, SZ=CHUNK_SIZE_Z;
+            final int SX = CHUNK_SIZE_X, SY = CHUNK_SIZE_Y, SZ = CHUNK_SIZE_Z;
             int baseX = pos.x * SX, baseZ = pos.z * SZ;
 
-            for (int y=0; y<SY; y++)
-              for (int z=0; z<SZ; z++)
-                for (int x=0; x<SX; x++) {
-                    byte id = c.get(x,y,z);
-                    if (id==AIR) continue;
+            for (int y = 0; y < SY; y++)
+                for (int z = 0; z < SZ; z++)
+                    for (int x = 0; x < SX; x++) {
+                        byte id = c.get(x, y, z);
+                        if (id == AIR) continue;
 
-                    // 6 directions
-                    emitIfAir(w, baseX+x, y, baseZ+z,  1,0,0,  va,ia, colorFor(id)); // +X
-                    emitIfAir(w, baseX+x, y, baseZ+z, -1,0,0,  va,ia, colorFor(id)); // -X
-                    emitIfAir(w, baseX+x, y, baseZ+z,  0,1,0,  va,ia, colorFor(id)); // +Y
-                    emitIfAir(w, baseX+x, y, baseZ+z,  0,-1,0, va,ia, colorFor(id)); // -Y
-                    emitIfAir(w, baseX+x, y, baseZ+z,  0,0,1,  va,ia, colorFor(id)); // +Z
-                    emitIfAir(w, baseX+x, y, baseZ+z,  0,0,-1, va,ia, colorFor(id)); // -Z
-                }
+                        float[] col = colorFor(id);
+
+                        // Sample light from this cell and its neighbors, take max
+                        int maxLight = c.getLight(x, y, z) & 0xFF;
+
+                        int[] dxs = { 1, -1, 0, 0, 0, 0 };
+                        int[] dys = { 0, 0, 1, -1, 0, 0 };
+                        int[] dzs = { 0, 0, 0, 0, 1, -1 };
+
+                        for (int i = 0; i < 6; i++) {
+                            int nx = x + dxs[i];
+                            int ny = y + dys[i];
+                            int nz = z + dzs[i];
+                            if (nx < 0 || nx >= SX || ny < 0 || ny >= SY || nz < 0 || nz >= SZ)
+                                continue;
+                            int nL = c.getLight(nx, ny, nz) & 0xFF;
+                            if (nL > maxLight) maxLight = nL;
+                        }
+
+                        // 0–15 → 0.2–1.0 brightness
+                        float blockLight = 0.2f + 0.8f * (maxLight / (float) MAX_LIGHT);
+
+                        int wx = baseX + x;
+                        int wy = y;
+                        int wz = baseZ + z;
+
+                        emitIfAir(w, wx, wy, wz,  1, 0, 0, va, ia, col, blockLight); // +X
+                        emitIfAir(w, wx, wy, wz, -1, 0, 0, va, ia, col, blockLight); // -X
+                        emitIfAir(w, wx, wy, wz,  0, 1, 0, va, ia, col, blockLight); // +Y
+                        emitIfAir(w, wx, wy, wz,  0,-1, 0, va, ia, col, blockLight); // -Y
+                        emitIfAir(w, wx, wy, wz,  0, 0, 1, va, ia, col, blockLight); // +Z
+                        emitIfAir(w, wx, wy, wz,  0, 0,-1, va, ia, col, blockLight); // -Z
+                    }
+            //w.jobs.submit(new MeshJob(w, pos));
 
             w.gpuUploads.add(new GpuUpload(pos, new MeshBlob(va.toArray(), ia.toArray())));
         }
-        
-        private void pushVertex(FloatArray va, float x,float y,float z, float[] c, float shade) {
-    		va.add(x);
-    		va.add(y);
-    		va.add(z);
-    		va.add(c[0] * shade);
-    		va.add(c[1] * shade);
-    		va.add(c[2] * shade);
-    	}
 
-        private float[] colorFor(byte id){
-            if (id==GRASS) return new float[]{0.2f,0.8f,0.2f};
-            if (id==DIRT)  return new float[]{0.5f,0.35f,0.2f};
-            if (id==STONE) return new float[]{0.6f,0.6f,0.65f};
-            return new float[]{1,1,1};
+        private float[] colorFor(byte id) {
+            if (id == GRASS) return new float[] { 0.2f, 0.8f, 0.2f };
+            if (id == DIRT)  return new float[] { 0.5f, 0.35f, 0.2f };
+            if (id == STONE) return new float[] { 0.6f, 0.6f, 0.65f };
+            return new float[] { 1f, 1f, 1f };
         }
 
-        private void emitIfAir(World w, int wx,int wy,int wz,
-                int nx,int ny,int nz,
-                FloatArray va, IntArray ia, float[] col) {
-			int ax = wx + nx, ay = wy + ny, az = wz + nz;
-			if (ay < 0 || ay >= CHUNK_SIZE_Y || !w.isSolid(ax, ay, az)) {
-			
-			 // --- base directional shading (same as before) ---
-			 float shade;
-			 if (ny > 0) {
-			     shade = 1.0f;      // top
-			 } else if (ny < 0) {
-			     shade = 0.4f;      // bottom
-			 } else if (nx != 0) {
-			     shade = 0.7f;      // east/west sides
-			 } else {
-			     shade = 0.85f;     // north/south sides
-			 }
-			
-			 // --- extra shadow if sun is blocked above this face ---
-			 // Sun is straight up, so only top faces (ny > 0) care.
-			 if (ny > 0) {
-			     boolean occluded = false;
-			     for (int yy = wy + 1; yy < CHUNK_SIZE_Y; yy++) {
-			         if (w.isSolid(wx, yy, wz)) {
-			             occluded = true;
-			             break;
-			         }
-			     }
-			     if (occluded) {
-			         // Darken heavily if something is above this column
-			         shade *= 0.3f;  // tweak this number to taste
-			     }
-			 }
-			
-			 // Make a quad centered on the block face
-			 float x = wx + 0.5f, y = wy + 0.5f, z = wz + 0.5f, s = 0.5f;
-			
-			 // Build 4 vertices for this face
-			 int base = va.size() / 6;
-			
-			 // Compute tangent vectors for face to get the rectangle corners
-			 float ux, uy, uz, vx, vy, vz;
-			 if (nx != 0) {                 // X face
-			     ux = 0; uy = 1; uz = 0;
-			     vx = 0; vy = 0; vz = 1;
-			 } else if (ny != 0) {          // Y face
-			     ux = 1; uy = 0; uz = 0;
-			     vx = 0; vy = 0; vz = 1;
-			 } else {                       // Z face
-			     ux = 1; uy = 0; uz = 0;
-			     vx = 0; vy = 1; vz = 0;
-			 }
-			
-			 float fx = x + nx * s, fy = y + ny * s, fz = z + nz * s;
-			
-			 // 4 vertices, with per-face shade applied
-			 pushVertex(va, fx - ux*s - vx*s, fy - uy*s - vy*s, fz - uz*s - vz*s, col, shade);
-		     pushVertex(va, fx + ux*s - vx*s, fy + uy*s - vy*s, fz + uz*s - vz*s, col, shade);
-		     pushVertex(va, fx + ux*s + vx*s, fy + uy*s + vy*s, fz + uz*s + vz*s, col, shade);
-		     pushVertex(va, fx - ux*s + vx*s, fy - uy*s + vy*s, fz - uz*s + vz*s, col, shade);
-			
-			 // Two triangles
-			 ia.add(base);   ia.add(base+1); ia.add(base+2);
-			 ia.add(base);   ia.add(base+2); ia.add(base+3);
-			}
+        private void emitIfAir(World w, int wx, int wy, int wz,
+                               int nx, int ny, int nz,
+                               FloatArray va, IntArray ia,
+                               float[] col, float blockLight) {
+            int ax = wx + nx, ay = wy + ny, az = wz + nz;
+            if (ay < 0 || ay >= CHUNK_SIZE_Y || !w.isSolid(ax, ay, az)) {
+
+                // directional shade (sun straight up)
+                float dirShade;
+                if (ny > 0)       dirShade = 1.0f;  // top
+                else if (ny < 0)  dirShade = 0.4f;  // bottom
+                else if (nx != 0) dirShade = 0.7f;  // east/west
+                else              dirShade = 0.85f; // north/south
+
+                float shade = dirShade * blockLight;
+
+                float x = wx + 0.5f, y = wy + 0.5f, z = wz + 0.5f, s = 0.5f;
+
+                int base = va.size() / 6;
+
+                float ux, uy, uz, vx, vy, vz;
+                if (nx != 0) {                 // X faces
+                    ux = 0; uy = 1; uz = 0;
+                    vx = 0; vy = 0; vz = 1;
+                } else if (ny != 0) {          // Y faces
+                    ux = 1; uy = 0; uz = 0;
+                    vx = 0; vy = 0; vz = 1;
+                } else {                       // Z faces
+                    ux = 1; uy = 0; uz = 0;
+                    vx = 0; vy = 1; vz = 0;
+                }
+
+                float fx = x + nx * s, fy = y + ny * s, fz = z + nz * s;
+
+                pushVertex(va, fx - ux*s - vx*s, fy - uy*s - vy*s, fz - uz*s - vz*s, col, shade);
+                pushVertex(va, fx + ux*s - vx*s, fy + uy*s - vy*s, fz + uz*s - vz*s, col, shade);
+                pushVertex(va, fx + ux*s + vx*s, fy + uy*s + vy*s, fz + uz*s + vz*s, col, shade);
+                pushVertex(va, fx - ux*s + vx*s, fy - uy*s + vy*s, fz - uz*s + vz*s, col, shade);
+
+                ia.add(base);   ia.add(base+1); ia.add(base+2);
+                ia.add(base);   ia.add(base+2); ia.add(base+3);
+            }
+        }
+
+        private void pushVertex(FloatArray va, float x, float y, float z,
+                                float[] c, float shade) {
+            va.add(x);
+            va.add(y);
+            va.add(z);
+            va.add(c[0] * shade);
+            va.add(c[1] * shade);
+            va.add(c[2] * shade);
         }
     }
+
+    
+    static final class LightJob implements Job {
+        private final World w;
+        private final ChunkPos pos;
+
+        LightJob(World w, ChunkPos pos) {
+            this.w = w;
+            this.pos = pos;
+        }
+
+        @Override
+        public JobPriority priority() {
+            // Use an existing priority from JobPriority
+            return JobPriority.P0_CRITICAL;
+        }
+
+        @Override
+        public void run() {
+            Chunk c = w.chunks.get(pos);
+            if (c == null) return;
+
+            final int SX = CHUNK_SIZE_X;
+            final int SY = CHUNK_SIZE_Y;
+            final int SZ = CHUNK_SIZE_Z;
+
+            int baseX = pos.x * SX;
+            int baseZ = pos.z * SZ;
+
+            // 1) clear light in this chunk
+            for (int y = 0; y < SY; y++) {
+                for (int z = 0; z < SZ; z++) {
+                    for (int x = 0; x < SX; x++) {
+                        c.setLight(x, y, z, (byte) 0);
+                    }
+                }
+            }
+
+            // 2) queue for flood fill
+            int max = SX * SY * SZ;
+            int[] qx = new int[max];
+            int[] qy = new int[max];
+            int[] qz = new int[max];
+            int[] ql = new int[max];
+            int head = 0, tail = 0;
+
+            // 3) seed skylight from above: air that can see the sky gets MAX_LIGHT
+            for (int z = 0; z < SZ; z++) {
+                for (int x = 0; x < SX; x++) {
+                    int wx = baseX + x;
+                    int wz = baseZ + z;
+
+                    boolean blocked = false;
+                    for (int y = SY - 1; y >= 0; y--) {
+                        int wy = y;
+                        if (w.isSolid(wx, wy, wz)) {
+                            blocked = true;
+                            continue;
+                        }
+                        if (!blocked) {
+                            c.setLight(x, y, z, (byte) MAX_LIGHT);
+                            if (tail < max) {
+                                qx[tail] = x;
+                                qy[tail] = y;
+                                qz[tail] = z;
+                                ql[tail] = MAX_LIGHT;
+                                tail++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4) flood fill through air with attenuation; solids receive but don't propagate
+            final int[] DX = { 1, -1, 0, 0, 0, 0 };
+            final int[] DY = { 0, 0, 1, -1, 0, 0 };
+            final int[] DZ = { 0, 0, 0, 0, 1, -1 };
+
+            while (head < tail) {
+                int x = qx[head];
+                int y = qy[head];
+                int z = qz[head];
+                int L = ql[head];
+                head++;
+
+                if (L <= 1) continue;
+                int newLBase = L - 1;
+
+                for (int i = 0; i < 6; i++) {
+                    int nx = x + DX[i];
+                    int ny = y + DY[i];
+                    int nz = z + DZ[i];
+                    if (nx < 0 || nx >= SX || ny < 0 || ny >= SY || nz < 0 || nz >= SZ) {
+                        continue;
+                    }
+
+                    int wx = baseX + nx;
+                    int wy = ny;
+                    int wz = baseZ + nz;
+
+                    boolean solid = w.isSolid(wx, wy, wz);
+
+                    int curL = c.getLight(nx, ny, nz) & 0xFF;
+                    int newL = newLBase;
+                    if (newL <= 0 || newL <= curL) {
+                        continue;
+                    }
+
+                    // Update light on this cell (air OR solid)
+                    c.setLight(nx, ny, nz, (byte) newL);
+
+                    // Solids receive light but do not propagate further
+                    if (solid) {
+                        continue;
+                    }
+
+                    // Air propagates further
+                    if (tail < max) {
+                        qx[tail] = nx;
+                        qy[tail] = ny;
+                        qz[tail] = nz;
+                        ql[tail] = newL;
+                        tail++;
+                    }
+                }
+            }
+
+            // 5) AFTER lighting is done, enqueue a mesh rebuild for this chunk
+            w.jobs.submit(new MeshJob(w, pos));
+        }
+    }
+
+
 
     // simple dynamic arrays to avoid boxing/alloc storms in mesher
     static final class FloatArray {
